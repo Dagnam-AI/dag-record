@@ -1,0 +1,7 @@
+# Generated file -- edit the repo policy in the tooling that emits it,
+# not this copy; a drift check fails if they diverge.
+TRUNK=main
+TRUNK_PUSH=pr
+FF_FROM_TRUNK=""
+NO_FORCE="release/*"
+PROMOTE=""
