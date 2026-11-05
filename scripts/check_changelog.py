@@ -5,8 +5,7 @@ At release time every entry is folded out of ``## [Unreleased]`` into a dated
 ``## [X.Y.Z] - YYYY-MM-DD`` heading, and ``X.Y.Z`` is the ``__version__`` being
 published. This exits non-zero when ``[Unreleased]`` still holds anything, or
 when the newest dated heading is not the current version with a real date: the
-two ways a release ships its changes undocumented, or under a date it does not
-have yet.
+two ways a release ships its changes undocumented, or with no real date.
 
 Standard library only.
 

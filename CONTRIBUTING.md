@@ -50,6 +50,12 @@ CI runs the tests on Python 3.9, 3.11 and 3.13 against the lowest and the highes
 range. Write code that imports on 3.9 (`typing.Optional`, not `X | None`, outside annotations
 with `from __future__ import annotations`).
 
+## The `redact` extra
+
+`dagnam-record[redact]` asks for `dagnam-contracts>=0.4.1,<0.6`, which must stay installable next
+to the `dagnam` SDK's own `dagnam-contracts` range. When a new contracts minor ships, bump both
+together and test `redact="auto"` against it.
+
 ## Pull requests
 
 Open a PR from a topic branch named
