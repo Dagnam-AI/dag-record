@@ -57,13 +57,13 @@ def _reaches(jobs: dict[str, str], start: str, goal: str) -> bool:
 def _problems(workflow: str) -> list[str]:
     """What lets a release publish around a gate, or lets a gate be skipped."""
     jobs = _jobs(workflow)
-    found = [f"no job {name}" for name in ("check", "ci", "build") if name not in jobs]
+    found = [f"no job {name}" for name in ("check", "ci", "build", "attest") if name not in jobs]
     if found:
         return found
     found += [
         f"{name} can start before {gate}"
         for name in PUBLISH
-        for gate in ("build", "check", "ci")
+        for gate in ("build", "attest", "check", "ci")
         if not _reaches(jobs, name, gate)
     ]
     found += [
@@ -95,7 +95,7 @@ def test_a_second_tag_never_cancels_a_release_that_is_uploading() -> None:
 
 def test_the_release_cannot_publish_around_a_gate() -> None:
     assert _problems(RELEASE) == []
-    assert set(_jobs(RELEASE)) >= PUBLISH | {"build", "check", "ci"}
+    assert set(_jobs(RELEASE)) >= PUBLISH | {"build", "attest", "check", "ci"}
 
 
 @pytest.mark.parametrize(
@@ -104,9 +104,14 @@ def test_the_release_cannot_publish_around_a_gate() -> None:
         ("    needs: [check, ci]\n", "    needs: [check]\n", "build does not wait"),
         ("    needs: [check, ci]\n", "    needs: [ci]\n", "build does not wait"),
         (
-            "    name: Publish to TestPyPI\n    needs: build\n",
+            "    name: Publish to TestPyPI\n    needs: [build, attest]\n",
             "    name: Publish to TestPyPI\n    needs: []\n",
             "publish-testpypi can start before",
+        ),
+        (
+            "    name: Publish to TestPyPI\n    needs: [build, attest]\n",
+            "    name: Publish to TestPyPI\n    needs: build\n",
+            "publish-testpypi can start before attest",
         ),
         (
             "    name: Publish to PyPI\n    needs: smoke-testpypi\n",
@@ -156,8 +161,10 @@ def test_publishing_is_by_trusted_publishing_and_no_secret_is_used() -> None:
         assert forbidden not in RELEASE
     jobs = _jobs(RELEASE)
     minting = {name for name, job in jobs.items() if "id-token: write" in job}
-    assert minting == {"build", *PUBLISH}  # build for the attestation, the others for OIDC
-    assert {name for name, job in jobs.items() if "attestations: write" in job} == {"build"}
+    # The attestation job and the two publish jobs, never the job that runs build tools.
+    assert minting == {"attest", *PUBLISH}
+    assert {name for name, job in jobs.items() if "attestations: write" in job} == {"attest"}
+    assert re.search(r"^    permissions:\n      contents: read\n    steps:", jobs["build"], re.M)
     assert "contents: write" not in RELEASE
     for name in PUBLISH:
         job = jobs[name]
@@ -198,7 +205,14 @@ def test_the_built_files_are_run_before_anything_is_published() -> None:
     assert 'python-version: "3.9"' in build  # the oldest supported Python, a clean environment
     assert 'scripts/smoke_record.py "$version"' in build
     assert "dist/*.whl dist/*.tar.gz" in build  # the wheel and the sdist both
-    assert build.index("smoke_record.py") < build.index("attest-build-provenance")
+    assert "attest-build-provenance" not in build
+    assert "enable-cache: false" in build  # the published files have no restorable cache as input
+    assert "upload-artifact@" in build
+    attest = _jobs(RELEASE)["attest"]
+    assert _needs(attest) == {"build"}
+    assert "download-artifact@" in attest
+    assert 'subject-path: "dist/*"' in attest
+    assert "run:" not in attest  # nothing but the two pinned actions runs next to the OIDC token
     smoke = _jobs(RELEASE)["smoke-testpypi"]
     assert 'python scripts/smoke_record.py "${GITHUB_REF_NAME#v}"' in smoke
     assert "dagnam-record==${GITHUB_REF_NAME#v}" in smoke
@@ -295,3 +309,14 @@ def test_the_testpypi_install_takes_nothing_from_the_real_index() -> None:
     assert "--index-url https://test.pypi.org/simple/" in install
     assert "extra-index-url" not in install
     assert "https://pypi.org/simple" not in install
+
+
+def test_only_a_commit_on_main_or_a_release_branch_is_released_before_anything_else_runs() -> None:
+    check = _jobs(RELEASE)["check"]
+    assert "fetch-depth: 0" in check
+    assert "'+refs/heads/main:refs/remotes/origin/main'" in check
+    assert "'+refs/heads/release/*:refs/remotes/origin/release/*'" in check
+    assert "git merge-base --is-ancestor HEAD" in check
+    assert "refs/remotes/origin/main 'refs/remotes/origin/release/'" in check
+    assert "exit 1" in check  # a commit on neither is refused
+    assert check.index("merge-base --is-ancestor") < check.index("check_changelog.py")
