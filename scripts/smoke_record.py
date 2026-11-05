@@ -30,6 +30,9 @@ def _run(*arguments: str, home: str) -> subprocess.CompletedProcess[str]:
         text=True,
         timeout=60,
         check=False,
+        # Never the caller's directory: ``python -m`` puts it first on sys.path, so from a
+        # checkout of this repository it would run the source tree, not the installed package.
+        cwd=home,
         env={**os.environ, "HOME": home, "USERPROFILE": home},
     )
 

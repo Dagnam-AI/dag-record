@@ -1,8 +1,8 @@
 # Code owners for the public `dagnam-record` package.
 #
-# GitHub auto-requests review from the owners of every changed path. This works
-# on public repositories regardless of plan, so unlike branch protection it is
-# real enforcement here rather than a client-side convention.
+# GitHub auto-requests review from the owners of every changed path. It only
+# *requests*: a ruleset that requires code-owner review (RELEASE.md) is what
+# makes the review mandatory.
 #
 # Keep this in sync with the collaborator list; an entry naming a user who has
 # lost access silently stops requesting anyone.

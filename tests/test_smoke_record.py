@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -89,3 +90,29 @@ def test_it_needs_exactly_the_expected_version(tmp_path: Path) -> None:
         result = _smoke(tmp_path, *arguments)
         assert result.returncode == 2
         assert "usage: smoke_record.py" in result.stderr
+
+
+def test_the_commands_run_the_installed_package_not_the_checkout_the_script_is_run_from(
+    tmp_path: Path,
+) -> None:
+    """From the repository root ``python -m`` would find the source tree first; it must not."""
+    site = tmp_path / "site"
+    # An "installed" copy whose CLI is missing, as a wheel built without it would be.
+    shutil.copytree(
+        ROOT / "dagnam_record", site / "dagnam_record", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    (site / "dagnam_record" / "_cli.py").unlink()
+    _dist_info(site, VERSION, "dagnam_record/__main__.py", "dagnam_record/py.typed")
+    home = tmp_path / "home"
+    home.mkdir()
+    result = subprocess.run(  # noqa: S603 - the running interpreter and our own script
+        [sys.executable, str(SCRIPT), VERSION],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        cwd=ROOT,
+        env={"PATH": os.environ.get("PATH", ""), "HOME": str(home), "PYTHONPATH": str(site)},
+    )
+    assert result.returncode == 1, result.stdout
+    assert "status exited" in result.stderr
