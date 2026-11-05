@@ -1,0 +1,147 @@
+name: dagnam-record CI
+
+# Which job enforces what:
+#
+#   check    `uv run poe check`: lint, format, pyright (Python 3.9 rules), and the whole suite on
+#            Python 3.12 with the SDK versions uv.lock pins, at the 100% statement and branch
+#            floor. Also: the distribution builds, its metadata and README render, and the
+#            built wheel installs and passes the release smoke test.
+#   matrix   the tests pass (no coverage floor here) on the lowest, a middle and the highest
+#            Python the package supports, each with the lowest and the highest `openai` and
+#            `anthropic` it declares (dagnam_record/_compat.py).
+#   sdist    the source distribution carries tests that run.
+#
+# release.yml calls this file, so a tag cannot publish a commit these jobs would have failed.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      # Backport branches for a published minor.
+      - "release/*"
+  workflow_call:
+
+# Least privilege: no job here writes to the repository.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, tests at 100% coverage, build (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # uv's equivalent of a local uv.toml for corporate-CA machines: a no-op on GitHub runners.
+      UV_NATIVE_TLS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+      # ruff check, ruff format --check, pyright, then pytest with branch coverage (fails under 100%).
+      - name: Quality gates
+        run: uv run poe check
+      - name: Build
+        run: uv build
+      - name: Check distribution metadata
+        run: |
+          uv run --with twine twine check dist/*
+          uv run --with "readme-renderer[md]" python -m readme_renderer README.md > /dev/null
+      - name: Install the built wheel into a clean environment and run it
+        run: |
+          version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' dagnam_record/__init__.py)"
+          python -m venv "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke/bin/pip" install dist/*.whl
+          "$RUNNER_TEMP/smoke/bin/python" scripts/smoke_record.py "$version"
+
+  matrix:
+    name: Recorder tests (Python ${{ matrix.python-version }}, ${{ matrix.sdk.name }} SDKs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+        # The ends of the declared ranges: openai>=1.66,<4 and anthropic>=0.40,<3. A test in
+        # tests/test_release_wiring.py keeps these equal to _compat.py. "highest" is whatever is
+        # newest inside the range on the day, so a new SDK release shows up here first.
+        sdk:
+          - name: lowest
+            openai: "openai==1.66.0"
+            anthropic: "anthropic==0.40.0"
+          - name: highest
+            openai: "openai<4"
+            anthropic: "anthropic<3"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Make a throwaway environment with this row's Python and SDK versions
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+          OPENAI: ${{ matrix.sdk.openai }}
+          ANTHROPIC: ${{ matrix.sdk.anthropic }}
+        run: |
+          uv venv --python "$PYTHON_VERSION" "$RUNNER_TEMP/env"
+          # The redact extra needs dagnam-contracts, which needs Python 3.12 or newer; the one
+          # test of redact="auto" is skipped below that.
+          spec="."
+          if "$RUNNER_TEMP/env/bin/python" -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
+            spec=".[redact]"
+          fi
+          # poethepoet goes into the throwaway environment too: the test step below runs the
+          # repo's `test-record` task in it, not a hand-written pytest command.
+          uv pip install --python "$RUNNER_TEMP/env/bin/python" pytest poethepoet "$OPENAI" "$ANTHROPIC" -e "$spec"
+          "$RUNNER_TEMP/env/bin/python" -c "import anthropic, openai, sys; print(sys.version.split()[0], 'openai', openai.__version__, 'anthropic', anthropic.__version__)"
+      - name: Recorder tests
+        env:
+          # The recorded fixtures under tests/fixtures are byte-exact for the SDK versions
+          # uv.lock pins, and the test that compares them with a fresh run refuses any others
+          # unless told this row runs other versions on purpose.
+          DAGNAM_RECORD_SDK_MATRIX: "1"
+          # Only a "lowest" row may skip test_sdk_features.py: in a "highest" row a feature the
+          # newest in-range SDK dropped fails it instead of silently skipping the tests that need it.
+          DAGNAM_RECORD_SDK_ROW: ${{ matrix.sdk.name }}
+        # The task's executor is "simple" (it runs in the active environment); this puts the
+        # throwaway environment first on PATH so `poe` and its `python` are the matrix row's.
+        run: PATH="$RUNNER_TEMP/env/bin:$PATH" poe test-record
+
+  sdist:
+    # The package ships its tests in the sdist (so a packager can run them). Prove they run from
+    # the unpacked archive on its own, with nothing from the checkout: that is what a packager has.
+    name: Tests from the source distribution (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.12"
+      - name: Build the source distribution and unpack it away from the checkout
+        run: |
+          uv build --sdist --out-dir "$RUNNER_TEMP/dist"
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -xzf "$RUNNER_TEMP"/dist/dagnam_record-*.tar.gz -C "$RUNNER_TEMP/unpacked"
+      - name: Run its tests
+        env:
+          # Newest in-range SDKs are installed here, not the locked ones the fixtures are
+          # byte-exact for: the fixture-currency test is told so.
+          DAGNAM_RECORD_SDK_MATRIX: "1"
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/env"
+          cd "$RUNNER_TEMP"/unpacked/dagnam_record-*
+          uv pip install --python "$RUNNER_TEMP/env/bin/python" pytest "openai<4" "anthropic<3" ".[redact]"
+          # Bare pytest on purpose, the one place: an unpacked sdist has no uv.lock or poe, so the
+          # task runner is not there (the same command is `test-record`).
+          "$RUNNER_TEMP/env/bin/python" -m pytest tests -q -p no:cacheprovider

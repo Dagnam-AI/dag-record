@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # Keep Python dependencies fresh. Grouped so a single PR sweeps minor/patch
+  # updates instead of producing a flood. The package has no runtime dependencies;
+  # this covers the build backend pin, the optional `redact` extra and the dev group
+  # (the openai and anthropic versions the fixtures are made with).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Keep action pins (SHA-pinned in workflows) up to date.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

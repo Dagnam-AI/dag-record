@@ -35,10 +35,10 @@ redact = ["dagnam-contracts>=0.4.1,<0.6"]
 
 [project.urls]
 Homepage = "https://dagnam.ai"
-Repository = "https://github.com/Dagnam-AI/dag-lib"
-Changelog = "https://github.com/Dagnam-AI/dag-lib/blob/main/record/CHANGELOG.md"
-Issues = "https://github.com/Dagnam-AI/dag-lib/issues"
-Security = "https://github.com/Dagnam-AI/dag-lib/blob/main/SECURITY.md"
+Repository = "https://github.com/Dagnam-AI/dag-record"
+Changelog = "https://github.com/Dagnam-AI/dag-record/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Dagnam-AI/dag-record/issues"
+Security = "https://github.com/Dagnam-AI/dag-record/blob/main/SECURITY.md"
 
 [build-system]
 requires = ["hatchling>=1.27,<1.34"]
@@ -52,4 +52,129 @@ packages = ["dagnam_record"]
 include = ["dagnam_record/py.typed"]
 
 [tool.hatch.build.targets.sdist]
-include = ["dagnam_record", "tests", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "pyproject.toml"]
+include = ["dagnam_record", "tests", "scripts", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "pyproject.toml"]
+
+[dependency-groups]
+# The ends of the declared ranges are tested by CI's matrix; these are the versions the checked-in
+# fixtures (tests/fixtures) are byte-exact for, whatever uv.lock pins inside the ranges.
+dev = [
+    "anthropic>=0.40,<3",
+    "openai>=1.66,<4",
+    "poethepoet>=0.46.0",
+    "pyright>=1.1.380",
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "ruff",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/ is not a package: its helper modules (``_mock_server``, ``gen_fixtures``...) import
+# each other by bare name.
+
+
+[tool.coverage.run]
+branch = true
+source = ["dagnam_record"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# Hard gate: 100% of statements AND branches (branch = true folds branches into the total).
+fail_under = 100
+
+[tool.pyright]
+include = ["dagnam_record", "tests", "scripts"]
+exclude = ["**/__pycache__", ".venv"]
+# The oldest Python the package supports: syntax or stdlib API newer than that fails here,
+# not on a user's machine.
+pythonVersion = "3.9"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "strict"
+reportMissingImports = "error"
+reportMissingTypeStubs = "warning"
+reportImplicitOverride = "error"
+reportUnusedImport = "error"
+# Strict minus its "completeness" family: the recorder patches third-party SDKs and handles
+# dynamic JSON bodies, where these are noise. Every bug-catching strict rule stays on.
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownParameterType = "none"
+reportUnknownLambdaType = "none"
+reportMissingParameterType = "none"
+reportMissingTypeArgument = "none"
+
+# Tests reach into private (`_`-prefixed) attributes to assert on internal state.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["."]
+reportPrivateUsage = "none"
+reportMissingTypeStubs = "none"
+
+[tool.ruff]
+line-length = 100
+# The oldest Python the package supports: a rule such as UP017 must never ask for
+# ``datetime.UTC`` (3.11+), which pyright (py39) would reject.
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "PT", "RUF", "ASYNC", "S", "T20",
+    "TID", "TCH", "D", "PERF", "FBT", "FA", "ARG",
+]
+ignore = [
+    "E501",
+    "D203", "D213", "D211", "D212",
+    "D100", "D104", "D105",
+    "S101",
+    # The package supports Python 3.9: ``typing.List``/``Optional`` spellings are deliberate (no
+    # ``from __future__`` PEP 585/604 rewrite is wanted in runtime-evaluated positions).
+    "UP006", "UP007", "UP035", "UP045", "UP028",
+    "D103", "D107",
+    "ARG001", "ARG002", "ARG005",
+    "FBT001", "FBT002",
+    "SIM105", "S110",
+    "TC001", "TC003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test modules import pytest and shared types purely for annotations; gating them behind
+# TYPE_CHECKING adds churn with no runtime benefit.
+"tests/**/*" = ["TC002"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dagnam_record"]
+combine-as-imports = true
+force-sort-within-sections = true
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+# ruff 0.17 also formats the code blocks of Markdown; the README's aligned comments are deliberate.
+exclude = ["*.md"]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.poe.tasks]
+lint = { cmd = "ruff check", help = "Lint with ruff" }
+format-check = { cmd = "ruff format --check", help = "Verify formatting" }
+typecheck = { cmd = "pyright", help = "Static type check (pyright, strict, Python 3.9 rules)" }
+test-record = { cmd = "python -m pytest tests -q -p no:cacheprovider", executor = { type = "simple" }, help = "Run the tests in the active environment, no coverage (the CI SDK matrix runs it in throwaway environments)" }
+test = { cmd = "pytest tests -q -n 4 --dist=loadfile --cov=dagnam_record --cov-branch --cov-report=term-missing", help = "Run the test suite in parallel with branch coverage (fails under 100%)" }
+test-cov = { cmd = "pytest tests -q -n 4 --dist=loadfile --cov=dagnam_record --cov-branch --cov-report=term-missing --cov-report=html:htmlcov --cov-report=json:coverage.json --cov-report=xml:coverage.xml", help = "Run tests in parallel with terminal, HTML, JSON and XML coverage reports" }
+build = { cmd = "uv build", help = "Build the source distribution and wheel" }
+check = { sequence = ["lint", "format-check", "typecheck", "test"], help = "Run every quality gate (lint, format, types, tests at 100% coverage)" }
+
+[tool.uv]
+# The `redact` extra needs dagnam-contracts, which supports Python 3.12 and newer, so the lock
+# can only be resolved for those; the package itself still supports 3.9 (CI's matrix installs it
+# into throwaway environments with `uv pip`, not from the lock).
+environments = ["python_version >= '3.12'"]

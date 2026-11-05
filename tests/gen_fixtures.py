@@ -1,10 +1,10 @@
-"""Regenerate the recorder fixtures in ``tests/audit/fixtures`` from real recorded calls.
+"""Regenerate the recorder fixtures in ``tests/fixtures`` from real recorded calls.
 
 A dev script, not a test (its name does not start with ``test_``). It runs the real ``openai`` and
 ``anthropic`` clients against the local mock server with ``dagnam_record.install()`` writing to a
 temporary directory, then copies the lines the recorder wrote. Run it from the repository root:
 
-    HOME="$(mktemp -d)" PYTHONPATH=record uv run python record/tests/gen_fixtures.py [OUT_DIR]
+    HOME="$(mktemp -d)" uv run python tests/gen_fixtures.py [OUT_DIR]
 
 Only three fields of each line are rewritten, so a second run gives the same bytes: ``trace_id``
 (``rec_<tag>_<n>``), ``ts`` and ``latency_ms`` (both counted up from a fixed base). The bodies and
@@ -36,7 +36,7 @@ import openai
 import dagnam_record
 
 EPOCH = 1_791_763_200  # 2026-10-12T00:00:00Z
-FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "audit" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 BATCH = "openai_roundtrip_batch.jsonl"
 SDK_VERSIONS = {"openai": "2.54.0", "anthropic": "0.125.0"}
 """The SDK versions the committed fixtures were generated with (the locked ones)."""

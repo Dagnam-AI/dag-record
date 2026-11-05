@@ -52,7 +52,7 @@ def test_anthropic_range(version: str, expected: bool) -> None:
     assert _compat.in_range(version, _compat.ANTHROPIC) is expected
 
 
-ROOT_PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
+ROOT_PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
 
 def dev_bounds(name: str) -> Tuple[str, str]:

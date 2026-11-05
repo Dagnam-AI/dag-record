@@ -49,5 +49,6 @@ All notable changes to `dagnam-record` are listed here, newest first. The format
   or a slow disk never blocks a call. `install()` does not raise when an SDK is half-installed (an
   import that fails with something other than `ImportError`): that SDK is skipped and one warning
   is logged.
-- Release automation (`release-record.yml`, tag `dagnam-record/v<version>`) and a CI matrix on
-  Python 3.9, 3.11 and 3.13 against the lowest and highest supported `openai` and `anthropic`.
+- Release automation (`release.yml`, tag `v<version>`, trusted publishing through TestPyPI to PyPI) and
+  a CI matrix on Python 3.9, 3.11 and 3.13 against the lowest and highest supported `openai` and
+  `anthropic`. The package has its own repository, `Dagnam-AI/dag-record`.

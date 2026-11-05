@@ -115,7 +115,9 @@ def test_the_tested_range_follows_the_declared_bounds() -> None:
     assert not _compat.in_range("3.0.0", _compat.ANTHROPIC)
 
 
-class Broken(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+# pyright 1.1.414's typeshed lacks importlib.abc.Loader under the Python 3.9 rules (it exists at
+# runtime on every supported Python), so the two diagnostics that follow from it are ignored.
+class Broken(importlib.abc.MetaPathFinder, importlib.abc.Loader):  # pyright: ignore[reportUntypedBaseClass]
     """Makes the import of one module raise ``error``, as a half-installed package does."""
 
     def __init__(self, name: str, error: BaseException) -> None:
@@ -134,7 +136,7 @@ class Broken(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         return None
 
     @override
-    def exec_module(self, module: ModuleType) -> None:
+    def exec_module(self, module: ModuleType) -> None:  # pyright: ignore[reportGeneralTypeIssues]
         raise self.error
 
 

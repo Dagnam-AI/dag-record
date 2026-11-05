@@ -238,7 +238,7 @@ def summarize(directory: str) -> Summary:
     )
 
 
-def _unlink(path: str) -> Union[None, bool, str]:
+def _unlink(path: str) -> Union[bool, str, None]:
     """Delete ``path`` (never through a symlink): True; None if already gone; else the reason."""
     try:
         os.unlink(path)
